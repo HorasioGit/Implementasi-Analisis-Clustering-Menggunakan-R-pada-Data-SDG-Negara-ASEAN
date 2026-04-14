@@ -1,0 +1,498 @@
+---
+title: "Implementasi Analisis Clustering pada Data SDG Negara-Negara ASEAN"
+author: "Horasio Nissi Immanuel (24031554068), Muhammad Zaidan Al Anwary (24031554124)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    number_sections: false
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo      = TRUE,
+  warning   = FALSE,
+  message   = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5
+)
+```
+
+**Kelas:** 2024A  
+**Dosen Pengampu:** Dinda Galuh Guminta, M.Stat.
+
+---
+
+# Abstrak
+
+Penelitian ini mengimplementasikan lima algoritma *clustering*—K-Means, K-Medians, DBSCAN, Mean Shift, dan Fuzzy C-Means—pada data Sustainable Development Goals (SDG) negara-negara ASEAN periode 2016–2024. Dataset terdiri dari 90 observasi (10 negara × 9 tahun) dengan 121 indikator SDG. Setelah preprocessing dan reduksi dimensi PCA, kelima algoritma diterapkan dengan jumlah klaster K=2 untuk perbandingan yang adil dan konsisten. Evaluasi menggunakan Silhouette Score menunjukkan Mean Shift sebagai algoritma terbaik (0.4057), diikuti DBSCAN (0.3283), K-Means (0.2884), K-Medians (0.1739), serta FCM (0.1006). Hasil menunjukkan pola konsisten: sebagian besar negara ASEAN membentuk satu klaster besar, sementara Lao PDR secara konsisten terpisah sebagai klaster tersendiri.
+
+**Kata kunci:** *clustering, K-Means, DBSCAN, Fuzzy C-Means, SDG, ASEAN*
+
+---
+
+# BAB 1 Pendahuluan
+
+Sustainable Development Goals (SDG) adalah kerangka pembangunan global yang ditetapkan PBB pada tahun 2015, terdiri atas 17 tujuan dengan ratusan indikator terukur yang harus dicapai pada tahun 2030. Di kawasan ASEAN, 10 negara anggota menghadapi tantangan yang sangat beragam dalam mewujudkan SDG, mulai dari disparitas ekonomi antara Singapura dengan negara berkembang seperti Myanmar dan Kamboja, hingga perbedaan kapasitas kelembagaan dan infrastruktur statistik.
+
+Mengidentifikasi kelompok negara dengan pola capaian SDG yang serupa merupakan langkah strategis dalam perumusan kebijakan regional. Analisis *clustering*—pendekatan *unsupervised machine learning*—mampu menemukan struktur tersembunyi dalam data berdimensi tinggi tanpa memerlukan label kelas sebelumnya (Jain, 2010). Dalam penelitian ini, seluruh algoritma dijalankan dengan **K=2** sebagai jumlah klaster yang konsisten, dipilih berdasarkan Silhouette Score tertinggi pada penentuan K optimal.
+
+**Rumusan masalah:** (1) Bagaimana pola pengelompokan negara ASEAN berdasarkan indikator SDG dengan K=2? (2) Algoritma mana yang menghasilkan klaster paling optimal? (3) Karakteristik SDG apa yang membedakan setiap klaster?
+
+**Tujuan penelitian:** (1) Mengelompokkan negara ASEAN berdasarkan capaian SDG 2016–2024 dengan K=2; (2) Membandingkan kinerja lima algoritma clustering secara adil pada jumlah klaster yang sama; (3) Menginterpretasikan karakteristik setiap klaster yang terbentuk.
+
+---
+
+# BAB 2 Metodologi Penelitian
+
+## A. Penjelasan Dataset
+
+Dataset yang digunakan adalah ASEAN SDG Database yang dipublikasikan oleh ASEAN Stats (<https://www.aseanstats.org/>). Dataset memiliki spesifikasi: 90 observasi (10 negara × 9 tahun, 2016–2024), 121 indikator SDG, serta kombinasi variabel kontinu dan biner. Sepuluh negara yang dicakup adalah Brunei Darussalam, Kamboja, Indonesia, Lao PDR, Malaysia, Myanmar, Filipina, Singapura, Thailand, dan Vietnam.
+
+## B. Variabel Penelitian
+
+**Tabel 1. Variabel Penelitian (Representasi dari 121 Indikator SDG)**
+
+```{r tabel-variabel, echo=FALSE}
+library(knitr); library(kableExtra)
+var_tbl <- data.frame(
+  Simbol = paste0("X",1:15),
+  `Kode SDG` = c("SDG.3.1.1","SDG.3.2.1","SDG.3.3.2","SDG.4.1.2","SDG.4.6.1",
+                 "SDG.6.1.1","SDG.7.1.1","SDG.7.2.1","SDG.8.5.2","SDG.9.c.1",
+                 "SDG.15.1.1","SDG.15.5.1","SDG.17.1.1","SDG.17.8.1","SDG.1.a.2"),
+  `Nama Variabel` = c(
+    "Angka kematian ibu per 100.000 kelahiran hidup",
+    "Angka kematian balita per 1.000 kelahiran hidup",
+    "Insidensi tuberkulosis per 100.000 penduduk",
+    "Tingkat penyelesaian pendidikan dasar (%)","Tingkat melek huruf dewasa (%)",
+    "Proporsi penduduk dengan air minum layak (%)","Proporsi penduduk dengan akses listrik (%)",
+    "Pangsa energi terbarukan (%)","Tingkat pengangguran (%)",
+    "Proporsi penduduk tercakup jaringan mobile (%)","Luas hutan sebagai proporsi total lahan (%)",
+    "Red List Index (RLI)","Total pendapatan pemerintah (% PDB)",
+    "Proporsi individu pengguna internet (%)","Belanja pemerintah untuk pendidikan (%)"),
+  Satuan = c("per 100.000","per 1.000","per 100.000","Persen","Persen","Persen",
+             "Persen","Persen","Persen","Persen","Persen","Indeks","Persen","Persen","Persen"),
+  check.names=FALSE)
+kable(var_tbl) %>% kable_styling(bootstrap_options=c("striped","hover","condensed"),
+                                  full_width=TRUE, font_size=12)
+```
+
+## C. Tinjauan Metode Clustering
+
+### 1. K-Means
+K-Means adalah algoritma partitional clustering yang meminimalkan Within-Cluster Sum of Squares (WCSS) dengan memperbarui centroid secara iteratif. Fungsi objektif: *J = ΣᵢΣₓ∈Cᵢ ||x − μᵢ||²*. Keunggulan: sederhana, efisien, skalabel. Kelemahan: sensitif terhadap outlier dan memerlukan spesifikasi K (Ahmed et al., 2020).
+
+### 2. K-Medians
+K-Medians menggunakan median sebagai pusat klaster dan jarak Manhattan (L1-norm). Lebih robust terhadap outlier dibanding K-Means karena median tidak dipengaruhi nilai ekstrem (Park & Jun, 2009).
+
+### 3. DBSCAN
+DBSCAN (Density-Based Spatial Clustering of Applications with Noise) mengelompokkan data berdasarkan densitas dan mampu mengidentifikasi noise/outlier. Parameter: ε (radius) dan MinPts (Ester et al., 1996). Noise pada DBSCAN ditetapkan ke klaster terdekat agar perbandingan dengan algoritma lain adil (K=2).
+
+### 4. Mean Shift
+Mean Shift adalah algoritma non-parametrik berbasis densitas yang menggeser setiap titik menuju puncak densitas kernel secara iteratif. Jumlah klaster ditentukan otomatis oleh bandwidth (Comaniciu & Meer, 2002). Bandwidth disesuaikan agar menghasilkan K=2.
+
+### 5. Fuzzy C-Means (FCM)
+Fuzzy C-Means memungkinkan satu observasi menjadi anggota lebih dari satu klaster dengan derajat keanggotaan uᵢⱼ ∈ [0,1]. Fungsi objektif: *Jₘ = ΣᵢΣⱼ uᵢⱼᵐ ||xᵢ − vⱼ||²* (Bezdek, 1981).
+
+---
+
+# BAB 3 Hasil dan Pembahasan
+
+## A. Karakteristik Data dan Preprocessing
+
+```{r load-libraries}
+library(readxl); library(dplyr); library(ggplot2); library(ggrepel)
+library(factoextra); library(cluster); library(ppclust)
+library(RColorBrewer); library(pheatmap); library(fpc)
+```
+
+```{r preprocessing}
+df_raw <- read_excel("asean_sdg_final_clean.xlsx")
+cat("Dimensi:", nrow(df_raw), "x", ncol(df_raw), "\n")
+cat("Negara:", paste(unique(df_raw$AMS), collapse=", "), "\n")
+
+id_cols   <- df_raw[, c("AMS","Year")]
+feat_cols <- df_raw[, -c(1,2)]
+zero_var  <- sapply(feat_cols, var, na.rm=TRUE) == 0
+feat_clean<- feat_cols[, !zero_var]
+cat("Kolom variansi nol dihapus:", sum(zero_var), "| Tersisa:", ncol(feat_clean), "\n")
+
+feat_scaled <- scale(feat_clean)
+df_agg <- data.frame(AMS=id_cols$AMS, as.data.frame(feat_scaled)) %>%
+  group_by(AMS) %>% summarise(across(everything(), mean, na.rm=TRUE))
+
+country_names <- df_agg$AMS
+feat_country  <- as.matrix(df_agg[, -1])
+rownames(feat_country) <- country_names
+cat("Data per negara:", nrow(feat_country), "x", ncol(feat_country), "\n")
+```
+
+```{r pca}
+set.seed(42)
+pca_res <- prcomp(feat_country, center=TRUE, scale.=FALSE)
+var_exp <- pca_res$sdev^2 / sum(pca_res$sdev^2)
+cum_var <- cumsum(var_exp)
+n_pc    <- which(cum_var >= 0.80)[1]
+
+data_pca <- pca_res$x[, 1:n_pc]
+data_2d  <- pca_res$x[, 1:2]
+
+cat("PC dipakai (>=80% varians):", n_pc, "\n")
+cat("Varians kumulatif          :", round(cum_var[n_pc]*100, 1), "%\n")
+cat("PC1:", round(var_exp[1]*100,1),"% | PC2:", round(var_exp[2]*100,1),"%\n")
+```
+
+```{r fig-scree, fig.cap="Gambar 1. Scree Plot PCA — Varians Kumulatif per Komponen Utama"}
+par(mfrow=c(1,2), mar=c(4,4,3,1))
+plot(var_exp[1:9]*100, type="b", pch=19, col="#2C7BB6",
+     xlab="PC", ylab="Varians (%)", main="Scree Plot", las=1)
+plot(cum_var[1:9]*100, type="b", pch=19, col="#D7191C",
+     xlab="PC", ylab="Kumulatif (%)", main="Kumulatif Varians", las=1, ylim=c(0,100))
+abline(h=80, lty=2, col="gray50"); abline(v=n_pc, lty=2, col="#1A9641")
+par(mfrow=c(1,1))
+```
+
+## B. Penentuan Jumlah Klaster Optimal
+
+Jumlah klaster K=2 dipilih karena menghasilkan Silhouette Score tertinggi (0.2884) dibanding K=3 hingga K=8. Penggunaan K=2 yang konsisten di semua algoritma memastikan perbandingan yang adil.
+
+```{r optimal-k}
+set.seed(42)
+k_max <- 8
+wss_vals <- sapply(1:k_max, function(k)
+  kmeans(data_pca, centers=k, nstart=25, iter.max=100)$tot.withinss)
+sil_vals <- sapply(2:k_max, function(k) {
+  km <- kmeans(data_pca, centers=k, nstart=25, iter.max=100)
+  mean(silhouette(km$cluster, dist(data_pca))[, 3])
+})
+cat("Silhouette Score per K:\n")
+print(setNames(round(sil_vals,4), paste0("K=",2:k_max)))
+cat("\nK optimal (Silhouette tertinggi):", which.max(sil_vals)+1, "\n")
+```
+
+```{r fig-elbow-silhouette, fig.cap="Gambar 2. Elbow Method dan Silhouette Score untuk K = 2 hingga 8"}
+par(mfrow=c(1,2), mar=c(4,4,3,1))
+plot(1:k_max, wss_vals, type="b", pch=19, col="#2C7BB6",
+     xlab="K", ylab="Total WSS", main="Elbow Method", las=1)
+abline(v=2, lty=2, col="#D7191C")
+plot(2:k_max, sil_vals, type="b", pch=19, col="#1A9641",
+     xlab="K", ylab="Silhouette Score", main="Silhouette Score", las=1)
+abline(v=2, lty=2, col="#D7191C")
+par(mfrow=c(1,1))
+```
+
+---
+
+# K-Means (K=2)
+
+```{r kmeans}
+set.seed(42)
+k  <- 2
+km <- kmeans(data_pca, centers=k, nstart=50, iter.max=200)
+km_cl <- km$cluster; names(km_cl) <- country_names
+sil_km <- mean(silhouette(km_cl, dist(data_pca))[, 3])
+
+cat("=== K-Means (K = 2) ===\n")
+cat("Silhouette Score:", round(sil_km, 4), "\n\n")
+print(data.frame(Negara=names(km_cl), Klaster=km_cl))
+cat("\nUkuran klaster:", km$size)
+```
+
+```{r fig-kmeans, fig.cap="Gambar 3. K-Means Clustering (K = 2)"}
+fviz_cluster(km, data=data_pca, geom="text", ellipse=TRUE,
+             ellipse.type="convex", palette="jco",
+             ggtheme=theme_bw(base_size=12),
+             main="K-Means Clustering (K = 2)",
+             xlab=paste0("PC1 (",round(var_exp[1]*100,1),"%)"),
+             ylab=paste0("PC2 (",round(var_exp[2]*100,1),"%)"),
+             labelsize=11) +
+  theme(plot.title=element_text(face="bold"))
+```
+
+---
+
+# K-Medians (K=2)
+
+```{r kmedians}
+set.seed(42)
+k_medians_fn <- function(data, k, max_iter=100) {
+  n <- nrow(data); centers <- data[sample(1:n,k),,drop=FALSE]
+  for (iter in 1:max_iter) {
+    dists    <- apply(centers,1,function(cc) apply(data,1,function(x) sum(abs(x-cc))))
+    clusters <- apply(dists,1,which.min)
+    new_c    <- matrix(NA,k,ncol(data))
+    for (j in 1:k) {
+      pts <- data[clusters==j,,drop=FALSE]
+      new_c[j,] <- if(nrow(pts)>0) apply(pts,2,median) else centers[j,]
+    }
+    if (all(abs(new_c-centers)<1e-6)) break
+    centers <- new_c
+  }
+  list(cluster=clusters, centers=centers)
+}
+kmed    <- k_medians_fn(data_pca, k=2)
+kmed_cl <- kmed$cluster; names(kmed_cl) <- country_names
+sil_kmed <- mean(silhouette(kmed_cl, dist(data_pca))[, 3])
+
+cat("=== K-Medians (K = 2) ===\n")
+cat("Silhouette Score:", round(sil_kmed, 4), "\n\n")
+print(data.frame(Negara=names(kmed_cl), Klaster=kmed_cl))
+```
+
+```{r fig-kmedians, fig.cap="Gambar 4. K-Medians Clustering (K = 2)"}
+df_kmed <- data.frame(AMS=country_names, PC1=data_pca[,1], PC2=data_pca[,2],
+                      Klaster=factor(kmed_cl))
+ggplot(df_kmed, aes(PC1,PC2,color=Klaster,label=AMS)) +
+  geom_point(size=5, alpha=0.85) +
+  geom_text_repel(size=3.5, fontface="bold", box.padding=0.4, point.padding=0.3) +
+  stat_ellipse(aes(fill=Klaster), alpha=0.1, geom="polygon") +
+  scale_color_brewer(palette="Set1") + scale_fill_brewer(palette="Set1") +
+  labs(title="K-Medians Clustering (K = 2)",
+       x=paste0("PC1 (",round(var_exp[1]*100,1),"%)"),
+       y=paste0("PC2 (",round(var_exp[2]*100,1),"%)")) +
+  theme_bw(base_size=12) + theme(plot.title=element_text(face="bold"))
+```
+
+---
+
+# DBSCAN (2 Klaster)
+
+> DBSCAN dijalankan pada ruang 2D (PC1–PC2). Titik noise ditetapkan ke klaster terdekat agar jumlah klaster efektif = 2, konsisten dengan algoritma lain.
+
+```{r fig-kdist, fig.cap="Gambar 5. k-Distance Plot untuk Penentuan Epsilon DBSCAN"}
+dbscan::kNNdistplot(data_2d, k=2)
+abline(h=2.0, col="red", lty=2)
+title("k-Distance Plot (k=2) — Ruang PC1-PC2")
+```
+
+```{r dbscan}
+eps_val <- 2.0
+dbs     <- dbscan::dbscan(data_2d, eps=eps_val, minPts=2)
+dbs_raw <- dbs$cluster; names(dbs_raw) <- country_names
+
+cat("=== DBSCAN (eps=2, minPts=2, ruang 2D) ===\n")
+cat("Klaster sebelum noise assignment:", max(dbs_raw),
+    "| Noise:", sum(dbs_raw==0), "negara\n")
+
+dbs_cl <- dbs_raw
+if (any(dbs_cl == 0)) {
+  noise_idx    <- which(dbs_cl == 0)
+  nonnoise_idx <- which(dbs_cl != 0)
+  for (ni in noise_idx) {
+    dists_to_nonnoise <- apply(data_2d[nonnoise_idx, , drop=FALSE], 1,
+                               function(r) sum((data_2d[ni,] - r)^2))
+    dbs_cl[ni] <- dbs_cl[nonnoise_idx[which.min(dists_to_nonnoise)]]
+  }
+}
+names(dbs_cl) <- country_names
+cat("\nHasil setelah noise assignment ke klaster terdekat:\n")
+print(data.frame(Negara=names(dbs_cl), Klaster=dbs_cl))
+
+sil_dbs <- silhouette(dbs_cl, dist(data_2d))
+cat("\nSilhouette Score:", round(mean(sil_dbs[,3]), 4), "\n")
+```
+
+```{r fig-dbscan, fig.cap="Gambar 6. DBSCAN Clustering (2 Klaster Efektif, ruang PC1-PC2)"}
+df_dbs <- data.frame(AMS=country_names, PC1=data_2d[,1], PC2=data_2d[,2],
+                     Klaster=factor(dbs_cl))
+ggplot(df_dbs, aes(PC1,PC2,color=Klaster,label=AMS)) +
+  geom_point(size=5, alpha=0.85) +
+  geom_text_repel(size=3.5, fontface="bold", box.padding=0.4, point.padding=0.3) +
+  stat_ellipse(aes(fill=Klaster), alpha=0.1, geom="polygon") +
+  scale_color_brewer(palette="Set1") + scale_fill_brewer(palette="Set1") +
+  labs(title="DBSCAN (eps=2, 2 Klaster Efektif)",
+       subtitle="Noise ditetapkan ke klaster terdekat | Ruang PC1-PC2",
+       x=paste0("PC1 (",round(var_exp[1]*100,1),"%)"),
+       y=paste0("PC2 (",round(var_exp[2]*100,1),"%)")) +
+  theme_bw(base_size=12) + theme(plot.title=element_text(face="bold"))
+```
+
+---
+
+# Mean Shift (2 Klaster)
+
+> Bandwidth disesuaikan agar Mean Shift menghasilkan tepat 2 klaster.
+
+```{r meanshift}
+set.seed(42)
+mean_shift_r <- function(X, h, tol=1e-4, max_iter=200) {
+  X <- as.matrix(X); n <- nrow(X); points <- X
+  for (iter in seq_len(max_iter)) {
+    new_pts <- matrix(0,n,ncol(X))
+    for (i in seq_len(n)) {
+      dists <- rowSums(sweep(X,2,points[i,])^2)
+      w <- exp(-dists/(2*h^2))
+      new_pts[i,] <- colSums(X*w)/sum(w)
+    }
+    if (max(sqrt(rowSums((new_pts-points)^2))) < tol) break
+    points <- new_pts
+  }
+  clusters <- rep(0,n); cl_id <- 1; assigned <- rep(FALSE,n)
+  for (i in seq_len(n)) {
+    if (assigned[i]) next
+    near <- sqrt(rowSums(sweep(points,2,points[i,])^2)) < (h*0.5)
+    clusters[near] <- cl_id; assigned[near] <- TRUE; cl_id <- cl_id+1
+  }
+  list(cluster=clusters, modes=points)
+}
+
+bw_base <- (mean(apply(data_2d, 2, stats::bw.nrd0))) * 2.0
+ms    <- mean_shift_r(data_2d, h=bw_base)
+ms_cl <- ms$cluster; names(ms_cl) <- country_names
+
+cat("=== Mean Shift (h =", round(bw_base,4), ", ruang 2D) ===\n")
+cat("Jumlah klaster:", length(unique(ms_cl)), "\n\n")
+print(data.frame(Negara=names(ms_cl), Klaster=ms_cl))
+
+sil_ms <- silhouette(ms_cl, dist(data_2d))
+cat("\nSilhouette Score:", round(mean(sil_ms[,3]), 4), "\n")
+```
+
+```{r fig-meanshift, fig.cap="Gambar 7. Mean Shift Clustering (2 Klaster, ruang PC1-PC2)"}
+df_ms <- data.frame(AMS=country_names, PC1=data_2d[,1], PC2=data_2d[,2],
+                    Klaster=factor(ms_cl))
+ggplot(df_ms, aes(PC1,PC2,color=Klaster,label=AMS)) +
+  geom_point(size=5, alpha=0.85) +
+  geom_text_repel(size=3.5, fontface="bold", box.padding=0.4, point.padding=0.3) +
+  stat_ellipse(aes(fill=Klaster), alpha=0.1, geom="polygon", level=0.8) +
+  scale_color_brewer(palette="Dark2") + scale_fill_brewer(palette="Dark2") +
+  labs(title=paste("Mean Shift (h =", round(bw_base,4), ", 2 Klaster)"),
+       subtitle="Ruang PC1-PC2",
+       x=paste0("PC1 (",round(var_exp[1]*100,1),"%)"),
+       y=paste0("PC2 (",round(var_exp[2]*100,1),"%)")) +
+  theme_bw(base_size=12) + theme(plot.title=element_text(face="bold"))
+```
+
+---
+
+# Fuzzy C-Means (C=2)
+
+```{r fcm}
+set.seed(42)
+fcm_res <- ppclust::fcm(data_pca, centers=2, m=2, nstart=10)
+fcm_cl  <- apply(fcm_res$u, 1, which.max); names(fcm_cl) <- country_names
+sil_fcm <- mean(silhouette(fcm_cl, dist(data_pca))[, 3])
+
+cat("=== Fuzzy C-Means (C = 2, m = 2) ===\n")
+cat("Silhouette Score:", round(sil_fcm, 4), "\n\n")
+print(data.frame(Negara=names(fcm_cl), Klaster=fcm_cl))
+
+cat("\nMembership Degree:\n")
+mem_tbl <- round(fcm_res$u, 3); rownames(mem_tbl) <- country_names
+colnames(mem_tbl) <- paste("Klaster",1:2)
+kable(mem_tbl, caption="Membership Degree FCM") %>%
+  kable_styling(bootstrap_options=c("striped","hover"), full_width=FALSE)
+```
+
+```{r fig-fcm, fig.cap="Gambar 8. Fuzzy C-Means Clustering (C = 2)"}
+df_fcm <- data.frame(AMS=country_names, PC1=data_pca[,1], PC2=data_pca[,2],
+                     Klaster=factor(fcm_cl))
+ggplot(df_fcm, aes(PC1,PC2,color=Klaster,label=AMS)) +
+  geom_point(size=5, alpha=0.85) +
+  geom_text_repel(size=3.5, fontface="bold", box.padding=0.4, point.padding=0.3) +
+  stat_ellipse(aes(fill=Klaster), alpha=0.1, geom="polygon") +
+  scale_color_brewer(palette="Set2") + scale_fill_brewer(palette="Set2") +
+  labs(title="Fuzzy C-Means (C = 2, m = 2)",
+       x=paste0("PC1 (",round(var_exp[1]*100,1),"%)"),
+       y=paste0("PC2 (",round(var_exp[2]*100,1),"%)")) +
+  theme_bw(base_size=12) + theme(plot.title=element_text(face="bold"))
+```
+
+```{r fig-membership, fig.cap="Gambar 9. Heatmap Membership Degree FCM"}
+pheatmap(mem_tbl, cluster_rows=TRUE, cluster_cols=FALSE,
+         color=colorRampPalette(c("white","#2166AC"))(50),
+         display_numbers=TRUE, number_format="%.2f",
+         fontsize=10, main="Membership Degree — Fuzzy C-Means (C=2)", angle_col=0)
+```
+
+---
+
+# Perbandingan Algoritma
+
+```{r perbandingan}
+sil_scores <- c(
+  "K-Means"    = round(sil_km,   4),
+  "K-Medians"  = round(sil_kmed, 4),
+  "DBSCAN"     = round(mean(sil_dbs[,3]), 4),
+  "Mean Shift" = round(mean(sil_ms[,3]),  4),
+  "FCM"        = round(sil_fcm,  4)
+)
+n_cl <- c("K-Means"=2,"K-Medians"=2,"DBSCAN"=2,"Mean Shift"=2,"FCM"=2)
+
+eval_df <- data.frame(
+  Algoritma        = names(sil_scores),
+  `Jml. Klaster`  = n_cl,
+  `Silhouette`    = sil_scores,
+  `Perlu K`       = c("Ya","Ya","Tidak*","Tidak*","Ya"),
+  `Robust Outlier`= c("Tidak","Ya","Ya","Sebagian","Tidak"),
+  `Soft`          = c("Tidak","Tidak","Tidak","Tidak","Ya"),
+  check.names=FALSE
+)
+best_row <- which.max(sil_scores)
+kable(eval_df, row.names=FALSE, caption="Tabel 3. Perbandingan Lima Algoritma (K=2)") %>%
+  kable_styling(bootstrap_options=c("striped","hover","bordered"), full_width=FALSE) %>%
+  row_spec(best_row, bold=TRUE, background="#d4edda")
+```
+
+```{r fig-perbandingan, fig.cap="Gambar 10. Perbandingan Silhouette Score Lima Algoritma (K=2)"}
+eval_plot <- data.frame(Algoritma=names(sil_scores), Sil=as.numeric(sil_scores)) %>%
+  arrange(desc(Sil))
+ggplot(eval_plot, aes(x=reorder(Algoritma,Sil), y=Sil, fill=Algoritma)) +
+  geom_col(width=0.6, alpha=0.85) +
+  geom_text(aes(label=round(Sil,4)), hjust=-0.1, size=4, fontface="bold") +
+  coord_flip(ylim=c(0, max(eval_plot$Sil)*1.3)) +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Perbandingan Silhouette Score (K=2 semua algoritma)",
+       subtitle="Semakin tinggi = pemisahan klaster lebih baik",
+       x=NULL, y="Silhouette Score") +
+  theme_bw(base_size=12) +
+  theme(legend.position="none", plot.title=element_text(face="bold"))
+```
+
+---
+
+# BAB 4 Kesimpulan dan Saran
+
+## A. Kesimpulan
+
+1. Lima algoritma clustering diimplementasikan secara konsisten dengan K=2 klaster, dipilih berdasarkan Silhouette Score tertinggi pada K-Means (K=2: 0.2884 vs K=3: 0.1510).
+2. Mean Shift menghasilkan Silhouette Score tertinggi (0.4057), diikuti DBSCAN (0.3283), K-Means dan FCM (0.1006), serta K-Medians (0.1739).
+3. Pola konsisten ditemukan di seluruh algoritma: **Lao PDR** secara konsisten terisolasi sebagai klaster tersendiri (Klaster 2), sementara 9 negara lainnya membentuk klaster utama (Klaster 1).
+4. FCM memberikan nilai tambah berupa membership degree yang menunjukkan keanggotaan parsial antar klaster.
+5. DBSCAN dan Mean Shift menggunakan ruang 2D (PC1–PC2) untuk menghindari curse of dimensionality pada dataset kecil (n=10).
+
+## B. Saran
+
+- Penelitian selanjutnya dapat mengeksplorasi K=3 atau lebih untuk mendapatkan pembedaan yang lebih granular antar negara ASEAN.
+- Analisis longitudinal per tahun 2016–2024 direkomendasikan untuk memantau pergeseran klaster dari waktu ke waktu.
+- Hierarchical Clustering dapat dijadikan pembanding tambahan untuk memvalidasi struktur klaster K=2.
+- Temuan bahwa Lao PDR konsisten terpisah mengindikasikan perlunya kebijakan intervensi SDG yang lebih intensif dan terfokus untuk negara tersebut.
+
+---
+
+# Daftar Pustaka
+
+Ahmed, M., Seraj, R., & Islam, S. M. S. (2020). The k-means algorithm: A comprehensive survey and performance evaluation. *Electronics*, *9*(8), 1295. https://doi.org/10.3390/electronics9081295
+
+ASEAN Secretariat. (2023). *ASEAN SDG Indicators Report 2023*. https://www.aseanstats.org/
+
+Bezdek, J. C. (1981). *Pattern recognition with fuzzy objective function algorithms*. Plenum Press.
+
+Comaniciu, D., & Meer, P. (2002). Mean shift: A robust approach toward feature space analysis. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, *24*(5), 603–619.
+
+Ester, M., Kriegel, H.-P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *Proceedings of the 2nd KDD Conference*, 226–231.
+
+Jain, A. K. (2010). Data clustering: 50 years beyond K-means. *Pattern Recognition Letters*, *31*(8), 651–666.
+
+Park, H.-S., & Jun, C.-H. (2009). A simple and fast algorithm for K-medoids clustering. *Expert Systems with Applications*, *36*(2), 3336–3341.
+
+Schubert, E., Sander, J., Ester, M., Kriegel, H.-P., & Xu, X. (2017). DBSCAN revisited, revisited. *ACM Transactions on Database Systems*, *42*(3), 1–21.
+
+Dataset: ASEAN Stats. (2024). *ASEAN SDG Database*. https://www.aseanstats.org/
+
+---
